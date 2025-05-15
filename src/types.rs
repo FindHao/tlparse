@@ -773,7 +773,9 @@ pub struct GuardAddedFastContext {
 
 #[derive(Serialize)]
 pub struct ProvenanceContext<'a> {
+    #[serde(borrow)]
     pub css: &'a str,
+    #[serde(borrow)]
     pub js: &'a str,
     pub pre_grad_graph_content: String,
     pub post_grad_graph_content: String,

@@ -47,10 +47,17 @@ pub struct Cli {
     /// For inductor provenance tracking highlighter
     #[arg(short, long)]
     inductor_provenance: bool,
+    /// Directory containing tritonparse output files
+    #[arg(long)]
+    tritonparse_log_dir: Option<PathBuf>,
+    /// URL template for tritonparse results (optional)
+    #[arg(long)]
+    tritonparse_url_template: Option<String>,
 }
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+
     let path = if cli.latest {
         let input_path = cli.path;
         // Path should be a directory
@@ -97,6 +104,9 @@ fn main() -> anyhow::Result<()> {
         plain_text: cli.plain_text,
         export: cli.export,
         inductor_provenance: cli.inductor_provenance,
+        tritonparse_log_dir: cli.tritonparse_log_dir,
+        tritonparse_url_template: cli.tritonparse_url_template,
+        out: out_path.clone(), 
     };
 
     let output = parse_path(&path, config)?;

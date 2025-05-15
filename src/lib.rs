@@ -30,6 +30,9 @@ pub struct ParseConfig {
     pub plain_text: bool,
     pub export: bool,
     pub inductor_provenance: bool,
+    pub tritonparse_log_dir: Option<PathBuf>,
+    pub tritonparse_url_template: Option<String>,
+    pub out: PathBuf,
 }
 
 impl Default for ParseConfig {
@@ -43,6 +46,9 @@ impl Default for ParseConfig {
             plain_text: false,
             export: false,
             inductor_provenance: false,
+            tritonparse_log_dir: None,
+            tritonparse_url_template: None,
+            out: PathBuf::default(),
         }
     }
 }
@@ -253,7 +259,124 @@ fn handle_guard(
     });
 }
 
+/// Process tritonparse files for a given compilation ID.
+/// 
+/// This function:
+/// 1. Constructs the expected filename based on compilation ID components
+/// 2. Checks if the source file exists in tritonparse log directory
+/// 3. Copies the file to the corresponding compilation ID directory
+/// 4. Generates appropriate URL for the file
+/// 
+/// The filename format is: f{frame_id}_fc{frame_compile_id}_a{attempt}_cai{compiled_autograd_id}.ndjson
+/// For example: f0_fc0_a0_cai-.ndjson for compilation ID [0/0_0]
+/// 
+/// Returns:
+/// - None if source file doesn't exist
+/// - Some((filename, url)) if file was successfully processed
+fn process_tritonparse_files(
+    tritonparse_log_dir: &PathBuf,    // Directory containing tritonparse log files
+    output_dir: &PathBuf,             // Base output directory for all generated files
+    compile_id: &CompileId,           // Compilation ID to process
+    url_template: Option<&str>,       // Optional URL template for external links
+) -> anyhow::Result<Option<(String, String)>> {
+    // Construct filename using compilation ID components
+    // Format: f{frame_id}_fc{frame_compile_id}_a{attempt}_cai{compiled_autograd_id}.ndjson
+    let filename = format!(
+        "f{}_fc{}_a{}_cai{}.ndjson",
+        compile_id.frame_id.unwrap_or(0),
+        compile_id.frame_compile_id.unwrap_or(0),
+        compile_id.attempt.unwrap_or(0),
+        compile_id.compiled_autograd_id.map_or("-".to_string(), |v| v.to_string())
+    );
+    
+    // Check if source file exists
+    let source_path = tritonparse_log_dir.join(&filename);
+    if !source_path.exists() {
+        eprintln!("Source file does not exist: {}", source_path.display());
+        return Ok(None);
+    }
+
+    // Create target directory that matches the display name exactly
+    // Important: Use to_string() to get the same format as shown in the web page
+    let dir_name = compile_id.to_string();
+    // Remove the square brackets
+    let dir_name = dir_name.trim_start_matches('[').trim_end_matches(']');
+    let target_dir = output_dir.join(dir_name);
+    eprintln!("TARGET: Copying {} to {}", filename, target_dir.display());
+    fs::create_dir_all(&target_dir)?;
+
+    // Copy file to target directory
+    let target_path = target_dir.join(&filename);
+    fs::copy(&source_path, &target_path)?;
+
+    // Also check for mapped.ndjson file
+    let mapped_filename = format!("{}_mapped.ndjson", filename.trim_end_matches(".ndjson"));
+    let mapped_source_path = tritonparse_log_dir.join(&mapped_filename);
+    if mapped_source_path.exists() {
+        let mapped_target_path = target_dir.join(&mapped_filename);
+        fs::copy(&mapped_source_path, &mapped_target_path)?;
+    }
+
+    // Generate URL for the file
+    // If URL template is provided, use it to generate external URL
+    // Otherwise, use relative path to the file
+    let url = if let Some(template) = url_template {
+        // Simply replace {} in template with the filename
+        template.replace("{}", &filename)
+    } else {
+        // For local files, use relative path from output directory
+        // Use the same directory name as the web page display
+        format!("{}/{}", dir_name, filename)
+    };
+
+    Ok(Some((filename, url)))
+}
+
+/// Find all tritonparse log files in the directory and categorize them
+/// Also print out all matched files and their compile IDs for debugging
+fn find_tritonparse_files(dir: &PathBuf) -> anyhow::Result<(Vec<(PathBuf, CompileId)>, Option<PathBuf>)> {
+    let mut compile_id_files = Vec::new();
+    let mut dedicated_mapped_file = None;
+
+    eprintln!("Searching for tritonparse files in: {}", dir.display());
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_file() {
+            if let Some(name) = path.file_name() {
+                let name = name.to_string_lossy();
+                if name == "dedicated_log_triton_trace__mapped.ndjson" {
+                    eprintln!("Found dedicated mapped file: {}", path.display());
+                    dedicated_mapped_file = Some(path);
+                } else if name.starts_with("f") && name.contains("_fc") && name.ends_with(".ndjson") {
+                    // Skip mapped files as they'll be handled with their parent files
+                    if !name.ends_with("_mapped.ndjson") {
+                        if let Some(compile_id) = extract_compile_id_from_filename(&name) {
+                            eprintln!("MATCH: {} -> compile_id: {}", name, compile_id);
+                            compile_id_files.push((path, compile_id));
+                        } else {
+                            eprintln!("Failed to extract compile ID from: {}", name);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok((compile_id_files, dedicated_mapped_file))
+}
+
+/// Create a special CompileId for dedicated mapped files
+fn create_dedicated_compile_id() -> CompileId {
+    CompileId {
+        frame_id: None,
+        frame_compile_id: None,
+        attempt: None,
+        compiled_autograd_id: None,
+    }
+}
+
 pub fn parse_path(path: &PathBuf, config: ParseConfig) -> anyhow::Result<ParseOutput> {
+    let out_path = config.out.clone();
     let strict = config.strict;
     if !path.is_file() {
         bail!("{} is not a file", path.display())
@@ -362,6 +485,71 @@ pub fn parse_path(path: &PathBuf, config: ParseConfig) -> anyhow::Result<ParseOu
     let mut all_parsers = default_parsers(&tt, &config);
     all_parsers.extend(config.custom_parsers);
     let mut chromium_events: Vec<serde_json::Value> = Vec::new();
+
+    // Process tritonparse files if directory is specified
+    // Do this before the main loop to avoid processing files multiple times
+    if let Some(tritonparse_log_dir) = &config.tritonparse_log_dir {
+        // Find all matching files and the dedicated mapped file
+        let (compile_id_files, dedicated_mapped_file) = find_tritonparse_files(tritonparse_log_dir)?;
+        
+        // Then process the dedicated mapped file if it exists
+        if let Some(mapped_path) = dedicated_mapped_file {
+            let dedicated_compile_id = create_dedicated_compile_id();
+            let target_dir = out_path.join(dedicated_compile_id.as_directory_name());
+            fs::create_dir_all(&target_dir)?;
+
+            let file_name = mapped_path.file_name().unwrap().to_string_lossy().to_string();
+            let target_path = target_dir.join(&file_name);
+            fs::copy(&mapped_path, &target_path)?;
+
+            // Add to the special [-/-] section
+            // Clone dedicated_compile_id since we need it again for the URL
+            let compile_directory = directory.entry(Some(dedicated_compile_id.clone())).or_default();
+            
+            // Generate URL using the same logic as process_tritonparse_files
+            let url = if let Some(template) = config.tritonparse_url_template.as_deref() {
+                // Simply replace {} in template with the filename
+                template.replace("{}", &file_name)
+            } else {
+                // For local files, use relative path from output directory
+                format!("{}/{}", dedicated_compile_id.as_directory_name(), file_name)
+            };
+
+            compile_directory.push(OutputFile {
+                url,
+                name: format!("TritonParse: {}", file_name),
+                number: output_count,
+                suffix: "📊".to_string(),
+            });
+            output_count += 1;
+
+            // Also add the file to the output list
+            output.push((
+                target_path,
+                fs::read_to_string(&mapped_path)?,
+            ));
+        }
+
+        // First process files with compile IDs
+        for (_file_path, compile_id) in compile_id_files {
+            if let Some((filename, url)) = process_tritonparse_files(
+                tritonparse_log_dir,
+                &out_path,
+                &compile_id,
+                config.tritonparse_url_template.as_deref(),
+            )? {
+                // Add file to compilation directory listing
+                let compile_directory = directory.entry(Some(compile_id.clone())).or_default();
+                compile_directory.push(OutputFile {
+                    url,
+                    name: format!("TritonParse: {}", filename),
+                    number: output_count,
+                    suffix: "📊".to_string(), // Use emoji as visual indicator
+                });
+                output_count += 1;
+            }
+        }
+    }
 
     while let Some((lineno, line)) = iter.next() {
         bytes_read += line.len() as u64;
@@ -880,4 +1068,24 @@ pub fn parse_path(path: &PathBuf, config: ParseConfig) -> anyhow::Result<ParseOu
     }
 
     Ok(output)
+}
+
+/// Extract CompileId from a tritonparse filename
+fn extract_compile_id_from_filename(filename: &str) -> Option<CompileId> {
+    // Expected format: f{frame_id}_fc{frame_compile_id}_a{attempt}_cai{compiled_autograd_id}.ndjson
+    let re = regex::Regex::new(r"f(\d+)_fc(\d+)_a(\d+)_cai([^-]+)\.ndjson").ok()?;
+    let caps = re.captures(filename)?;
+    
+    Some(CompileId {
+        frame_id: caps.get(1).and_then(|m| m.as_str().parse().ok()),
+        frame_compile_id: caps.get(2).and_then(|m| m.as_str().parse().ok()),
+        attempt: caps.get(3).and_then(|m| m.as_str().parse().ok()),
+        compiled_autograd_id: caps.get(4).and_then(|m| {
+            if m.as_str() == "-" {
+                None
+            } else {
+                m.as_str().parse().ok()
+            }
+        }),
+    })
 }
