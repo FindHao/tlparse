@@ -182,18 +182,53 @@
                 "LD_PRELOAD": "/usr/lib64/libc.so.6",
                 "PATH": "/home/users/yhao24/miniconda3/envs/ptb/bin:${env:PATH}"
             }
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug tlparse (System Rust)",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=tlparse",
+                    "--package=tlparse",
+                    "--profile=dev"
+                ],
+                "filter": {
+                    "name": "tlparse",
+                    "kind": "bin"
+                }
+            },
+            "args": ["tests/inputs/simple.log", "-o", "debug_output", "--tritonparse-log-dir", "${workspaceFolder}/tests/logs", "--overwrite"],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "CC": "gcc",
+                "CXX": "g++",
+                "AR": "ar",
+                "RUSTFLAGS": "-C debuginfo=2 -C force-frame-pointers=yes -C target-feature=-crt-static -C link-arg=-fPIC -C link-arg=-Wl,--no-as-needed -C link-arg=-Wl,--exclude-libs,ALL"
+            },
+            "sourceLanguages": ["rust"],
+            "internalConsoleOptions": "openOnSessionStart",
+            "initCommands": [
+                "settings set target.inline-breakpoint-strategy always",
+                "settings set target.disable-aslr false"
+            ],
+            "preLaunchCommands": [
+                "process handle -n false SIGUSR1 SIGUSR2"
+            ]
         }
     ],
     "inputs": [
         {
             "id": "logFilePath",
             "type": "promptString",
-            "description": "Path to log file or directory"
+            "description": "Path to log file or directory",
+            "default": "tests/inputs/simple.log"
         },
         {
             "id": "outputDir",
             "type": "promptString",
-            "default": "tl_out",
+            "default": "debug_output",
             "description": "Output directory"
         }
     ]

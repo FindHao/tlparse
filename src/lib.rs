@@ -345,18 +345,15 @@ fn find_tritonparse_files(dir: &PathBuf) -> anyhow::Result<(Vec<(PathBuf, Compil
         if path.is_file() {
             if let Some(name) = path.file_name() {
                 let name = name.to_string_lossy();
-                if name == "dedicated_log_triton_trace__mapped.ndjson" {
+                if name.ends_with("_mapped.ndjson") {
                     eprintln!("Found dedicated mapped file: {}", path.display());
                     dedicated_mapped_file = Some(path);
                 } else if name.starts_with("f") && name.contains("_fc") && name.ends_with(".ndjson") {
-                    // Skip mapped files as they'll be handled with their parent files
-                    if !name.ends_with("_mapped.ndjson") {
                         if let Some(compile_id) = extract_compile_id_from_filename(&name) {
                             eprintln!("MATCH: {} -> compile_id: {}", name, compile_id);
                             compile_id_files.push((path, compile_id));
                         } else {
-                            eprintln!("Failed to extract compile ID from: {}", name);
-                        }
+                        eprintln!("Failed to extract compile ID from: {}", name);
                     }
                 }
             }
@@ -1073,7 +1070,8 @@ pub fn parse_path(path: &PathBuf, config: ParseConfig) -> anyhow::Result<ParseOu
 /// Extract CompileId from a tritonparse filename
 fn extract_compile_id_from_filename(filename: &str) -> Option<CompileId> {
     // Expected format: f{frame_id}_fc{frame_compile_id}_a{attempt}_cai{compiled_autograd_id}.ndjson
-    let re = regex::Regex::new(r"f(\d+)_fc(\d+)_a(\d+)_cai([^-]+)\.ndjson").ok()?;
+    // Allow hyphen in compiled_autograd_id part
+    let re = regex::Regex::new(r"f(\d+)_fc(\d+)_a(\d+)_cai([^.]*)\.ndjson").ok()?;
     let caps = re.captures(filename)?;
     
     Some(CompileId {
