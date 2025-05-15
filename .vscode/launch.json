@@ -1,0 +1,151 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug tlparse",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=tlparse",
+                    "--package=tlparse"
+                ],
+                "filter": {
+                    "name": "tlparse",
+                    "kind": "bin"
+                }
+            },
+            "args": ["tests/inputs/simple.log", "-o", "debug_output"],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "CC": "gcc",
+                "CXX": "g++",
+                "AR": "ar",
+                "RUSTFLAGS": "-C target-feature=-crt-static -C link-arg=-fPIC -C link-arg=-Wl,--no-as-needed -C link-arg=-Wl,--exclude-libs,ALL",
+                "CMAKE_PREFIX_PATH": "/home/users/yhao24/miniconda3/envs/ptb",
+                "LIBRARY_PATH": "/home/users/yhao24/miniconda3/envs/ptb/lib:/usr/lib64:/usr/lib",
+                "LD_LIBRARY_PATH": "/home/users/yhao24/miniconda3/envs/ptb/lib:/usr/lib64:/usr/lib",
+                "CXXFLAGS": "-I/home/users/yhao24/miniconda3/envs/ptb/include -fPIC",
+                "LDFLAGS": "-L/home/users/yhao24/miniconda3/envs/ptb/lib -L/usr/lib64 -L/usr/lib -Wl,-rpath,/home/users/yhao24/miniconda3/envs/ptb/lib -Wl,-rpath,/usr/lib64 -Wl,-rpath,/usr/lib",
+                "PKG_CONFIG_PATH": "/home/users/yhao24/miniconda3/envs/ptb/lib/pkgconfig",
+                "PKG_CONFIG_LIBDIR": "/usr/lib64/pkgconfig:/usr/share/pkgconfig",
+                "LD_PRELOAD": "/usr/lib64/libc.so.6",
+                "PATH": "/home/users/yhao24/miniconda3/envs/ptb/bin:${env:PATH}"
+            }
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=tlparse",
+                    "--package=tlparse"
+                ],
+                "filter": {
+                    "name": "tlparse",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "CC": "gcc",
+                "CXX": "g++",
+                "AR": "ar",
+                "RUSTFLAGS": "-C target-feature=-crt-static -C link-arg=-fPIC -C link-arg=-Wl,--no-as-needed -C link-arg=-Wl,--exclude-libs,ALL",
+                "CMAKE_PREFIX_PATH": "/home/users/yhao24/miniconda3/envs/ptb",
+                "LIBRARY_PATH": "/home/users/yhao24/miniconda3/envs/ptb/lib:/usr/lib64:/usr/lib",
+                "LD_LIBRARY_PATH": "/home/users/yhao24/miniconda3/envs/ptb/lib:/usr/lib64:/usr/lib",
+                "CXXFLAGS": "-I/home/users/yhao24/miniconda3/envs/ptb/include -fPIC",
+                "LDFLAGS": "-L/home/users/yhao24/miniconda3/envs/ptb/lib -L/usr/lib64 -L/usr/lib -Wl,-rpath,/home/users/yhao24/miniconda3/envs/ptb/lib -Wl,-rpath,/usr/lib64 -Wl,-rpath,/usr/lib",
+                "PKG_CONFIG_PATH": "/home/users/yhao24/miniconda3/envs/ptb/lib/pkgconfig",
+                "PKG_CONFIG_LIBDIR": "/usr/lib64/pkgconfig:/usr/share/pkgconfig",
+                "LD_PRELOAD": "/usr/lib64/libc.so.6",
+                "PATH": "/home/users/yhao24/miniconda3/envs/ptb/bin:${env:PATH}"
+            }
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration tests",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=integration_test"
+                ],
+                "filter": {
+                    "name": "integration_test",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "CC": "gcc",
+                "CXX": "g++",
+                "AR": "ar",
+                "RUSTFLAGS": "-C target-feature=-crt-static -C link-arg=-fPIC -C link-arg=-Wl,--no-as-needed -C link-arg=-Wl,--exclude-libs,ALL",
+                "CMAKE_PREFIX_PATH": "/home/users/yhao24/miniconda3/envs/ptb",
+                "LIBRARY_PATH": "/home/users/yhao24/miniconda3/envs/ptb/lib:/usr/lib64:/usr/lib",
+                "LD_LIBRARY_PATH": "/home/users/yhao24/miniconda3/envs/ptb/lib:/usr/lib64:/usr/lib",
+                "CXXFLAGS": "-I/home/users/yhao24/miniconda3/envs/ptb/include -fPIC",
+                "LDFLAGS": "-L/home/users/yhao24/miniconda3/envs/ptb/lib -L/usr/lib64 -L/usr/lib -Wl,-rpath,/home/users/yhao24/miniconda3/envs/ptb/lib -Wl,-rpath,/usr/lib64 -Wl,-rpath,/usr/lib",
+                "PKG_CONFIG_PATH": "/home/users/yhao24/miniconda3/envs/ptb/lib/pkgconfig",
+                "PKG_CONFIG_LIBDIR": "/usr/lib64/pkgconfig:/usr/share/pkgconfig",
+                "LD_PRELOAD": "/usr/lib64/libc.so.6",
+                "PATH": "/home/users/yhao24/miniconda3/envs/ptb/bin:${env:PATH}"
+            }
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug with custom args",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=tlparse",
+                    "--package=tlparse"
+                ],
+                "filter": {
+                    "name": "tlparse",
+                    "kind": "bin"
+                }
+            },
+            "args": ["${input:logFilePath}", "-o", "${input:outputDir}"],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "CC": "gcc",
+                "CXX": "g++",
+                "AR": "ar",
+                "RUSTFLAGS": "-C target-feature=-crt-static -C link-arg=-fPIC -C link-arg=-Wl,--no-as-needed -C link-arg=-Wl,--exclude-libs,ALL",
+                "CMAKE_PREFIX_PATH": "/home/users/yhao24/miniconda3/envs/ptb",
+                "LIBRARY_PATH": "/home/users/yhao24/miniconda3/envs/ptb/lib:/usr/lib64:/usr/lib",
+                "LD_LIBRARY_PATH": "/home/users/yhao24/miniconda3/envs/ptb/lib:/usr/lib64:/usr/lib",
+                "CXXFLAGS": "-I/home/users/yhao24/miniconda3/envs/ptb/include -fPIC",
+                "LDFLAGS": "-L/home/users/yhao24/miniconda3/envs/ptb/lib -L/usr/lib64 -L/usr/lib -Wl,-rpath,/home/users/yhao24/miniconda3/envs/ptb/lib -Wl,-rpath,/usr/lib64 -Wl,-rpath,/usr/lib",
+                "PKG_CONFIG_PATH": "/home/users/yhao24/miniconda3/envs/ptb/lib/pkgconfig",
+                "PKG_CONFIG_LIBDIR": "/usr/lib64/pkgconfig:/usr/share/pkgconfig",
+                "LD_PRELOAD": "/usr/lib64/libc.so.6",
+                "PATH": "/home/users/yhao24/miniconda3/envs/ptb/bin:${env:PATH}"
+            }
+        }
+    ],
+    "inputs": [
+        {
+            "id": "logFilePath",
+            "type": "promptString",
+            "description": "Path to log file or directory"
+        },
+        {
+            "id": "outputDir",
+            "type": "promptString",
+            "default": "tl_out",
+            "description": "Output directory"
+        }
+    ]
+} 

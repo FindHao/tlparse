@@ -1,0 +1,25 @@
+[target.x86_64-unknown-linux-gnu]
+linker = "gcc"
+rustflags = [
+    "-C", "link-arg=-fPIC",
+    "-C", "link-arg=-Wl,--no-as-needed",
+    "-C", "link-arg=-Wl,--exclude-libs,ALL",
+    "-C", "link-arg=-Wl,-rpath,/home/users/yhao24/miniconda3/envs/ptb/lib",
+    "-C", "link-arg=-Wl,-rpath,/usr/lib64",
+    "-C", "link-arg=-Wl,-rpath,/usr/lib",
+]
+
+[env]
+CC = "gcc"
+CXX = "g++"
+AR = "ar"
+RUSTFLAGS = "-C target-feature=-crt-static -C link-arg=-fPIC"
+CMAKE_PREFIX_PATH = { value = "/home/users/yhao24/miniconda3/envs/ptb", force = true }
+LIBRARY_PATH = { value = "/home/users/yhao24/miniconda3/envs/ptb/lib:/usr/lib64:/usr/lib", force = true }
+LD_LIBRARY_PATH = { value = "/home/users/yhao24/miniconda3/envs/ptb/lib:/usr/lib64:/usr/lib", force = true }
+CXXFLAGS = { value = "-I/home/users/yhao24/miniconda3/envs/ptb/include -fPIC", force = true }
+LDFLAGS = { value = "-L/home/users/yhao24/miniconda3/envs/ptb/lib -L/usr/lib64 -L/usr/lib -Wl,-rpath,/home/users/yhao24/miniconda3/envs/ptb/lib", force = true }
+PKG_CONFIG_PATH = { value = "/home/users/yhao24/miniconda3/envs/ptb/lib/pkgconfig", force = true }
+PKG_CONFIG_LIBDIR = { value = "/usr/lib64/pkgconfig:/usr/share/pkgconfig", force = true }
+
+# Removed the [build] section with sccache 
