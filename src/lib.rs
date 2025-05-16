@@ -321,8 +321,8 @@ fn process_tritonparse_files(
     // If URL template is provided, use it to generate external URL
     // Otherwise, use relative path to the file
     let url = if let Some(template) = url_template {
-        // Simply replace {} in template with the filename
-        template.replace("{}", &filename)
+        // Replace {filename} in template with the actual filename
+        template.replace("{filename}", &filename)
     } else {
         // For local files, use relative path from output directory
         // Use the same directory name as the web page display
@@ -505,8 +505,8 @@ pub fn parse_path(path: &PathBuf, config: ParseConfig) -> anyhow::Result<ParseOu
             
             // Generate URL using the same logic as process_tritonparse_files
             let url = if let Some(template) = config.tritonparse_url_template.as_deref() {
-                // Simply replace {} in template with the filename
-                template.replace("{}", &file_name)
+                // Replace {filename} in template with the actual filename
+                template.replace("{filename}", &file_name)
             } else {
                 // For local files, use relative path from output directory
                 format!("{}/{}", dedicated_compile_id.as_directory_name(), file_name)

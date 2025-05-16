@@ -5,3 +5,4 @@
 *.log
 !/tests/inputs/*.log
 debug_output
+tests/logs

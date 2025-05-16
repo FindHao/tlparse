@@ -199,7 +199,7 @@
                     "kind": "bin"
                 }
             },
-            "args": ["tests/inputs/simple.log", "-o", "debug_output", "--tritonparse-log-dir", "${workspaceFolder}/tests/logs", "--overwrite"],
+            "args": ["tests/inputs/simple.log", "-o", "debug_output", "--tritonparse-log-dir", "${workspaceFolder}/tests/logs", "--overwrite", "--tritonparse-url-template", "https://tritonparse.com/index.html?json_url=https://tritonparse.com/api/v1/tritonparse/triton_trace/{filename}"],
             "cwd": "${workspaceFolder}",
             "env": {
                 "CC": "gcc",
