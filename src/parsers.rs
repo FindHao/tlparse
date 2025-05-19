@@ -4,6 +4,7 @@ use html_escape::encode_text;
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::ffi::{OsStr, OsString};
+use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 use tinytemplate::TinyTemplate;
@@ -816,6 +817,126 @@ impl StructuredLogParser for PropagateRealTensorsParser<'_> {
                 "Expected SymbolicShapePropagateRealTensor metadata"
             ))
         }
+    }
+}
+
+pub struct TritonParseParser {
+    pub tritonparse_log_dir: PathBuf,
+    // 硬编码 URL 前缀
+    pub tritonparse_url_prefix: &'static str,
+}
+
+impl TritonParseParser {
+    pub fn new(tritonparse_log_dir: PathBuf) -> Self {
+        Self {
+            tritonparse_log_dir,
+            // 硬编码 URL 前缀
+            tritonparse_url_prefix: "https://tritonparse.com/index.html?json_url=https://tritonparse.com/api/v1/tritonparse/triton_trace/",
+        }
+    }
+}
+
+impl StructuredLogParser for TritonParseParser {
+    fn name(&self) -> &'static str {
+        "tritonparse"
+    }
+
+    fn get_metadata<'e>(&self, _e: &'e Envelope) -> Option<Metadata<'e>> {
+        // 始终返回元数据，这样 parse 方法会被调用一次
+        Some(Metadata::Empty(&EmptyMetadata {}))
+    }
+
+    fn parse<'e>(
+        &self,
+        _lineno: usize,
+        _metadata: Metadata<'e>,
+        _rank: Option<u32>,
+        compile_id: &Option<CompileId>,
+        _payload: &str,
+    ) -> anyhow::Result<ParserResults> {
+        // 确保每个编译 ID 只处理一次
+        use std::sync::Mutex;
+        use std::sync::Once;
+        
+        // 使用 Once 确保每个编译 ID 只处理一次
+        thread_local! {
+            static PROCESSED_ONCE: Mutex<HashSet<String>> = Mutex::new(HashSet::new());
+        }
+        
+        let mut results = Vec::new();
+        
+        if let Some(cid) = compile_id {
+            // 检查这个编译 ID 是否已处理过
+            let cid_str = cid.to_string();
+            let mut should_process = true;
+            
+            PROCESSED_ONCE.with(|processed| {
+                let mut processed = processed.lock().unwrap();
+                if processed.contains(&cid_str) {
+                    should_process = false;
+                } else {
+                    processed.insert(cid_str.clone());
+                }
+            });
+            
+            if !should_process {
+                return Ok(Vec::new());
+            }
+            
+            // 1. 构建常规 tritonparse 文件名
+            let filename = format!(
+                "f{}_fc{}_a{}_cai{}.ndjson",
+                cid.frame_id.unwrap_or(0),
+                cid.frame_compile_id.unwrap_or(0),
+                cid.attempt.unwrap_or(0),
+                cid.compiled_autograd_id.map_or("-".to_string(), |v| v.to_string())
+            );
+            
+            // 2. 检查文件是否存在
+            let source_path = self.tritonparse_log_dir.join(&filename);
+            if source_path.exists() {
+                // 3. 生成完整 URL
+                let url = format!("{}{}", self.tritonparse_url_prefix, filename);
+                
+                // 4. 添加链接
+                results.push(ParserOutput::Link(
+                    format!("TritonParse: {}", filename),
+                    url,
+                ));
+            }
+        } else {
+            // 如果没有编译 ID，查找并处理专用的映射文件（只处理一次）
+            static MAPPED_FILE_PROCESSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+            
+            if !MAPPED_FILE_PROCESSED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                if let Ok(entries) = fs::read_dir(&self.tritonparse_log_dir) {
+                    for entry in entries {
+                        if let Ok(entry) = entry {
+                            let path = entry.path();
+                            if path.is_file() {
+                                if let Some(name) = path.file_name() {
+                                    let name_str = name.to_string_lossy();
+                                    if name_str.ends_with("_mapped.ndjson") {
+                                        // 生成完整 URL
+                                        let url = format!("{}{}", self.tritonparse_url_prefix, name_str);
+                                        
+                                        // 添加链接
+                                        results.push(ParserOutput::Link(
+                                            format!("TritonParse: {}", name_str),
+                                            url,
+                                        ));
+                                        
+                                        break; // 只处理找到的第一个映射文件
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        Ok(results)
     }
 }
 

@@ -17,7 +17,7 @@ use crate::parsers::ParserOutput;
 use crate::parsers::StructuredLogParser;
 use crate::templates::*;
 use crate::types::*;
-mod parsers;
+pub mod parsers;
 mod templates;
 mod types;
 
@@ -30,6 +30,7 @@ pub struct ParseConfig {
     pub plain_text: bool,
     pub export: bool,
     pub inductor_provenance: bool,
+    pub out: PathBuf,
 }
 
 impl Default for ParseConfig {
@@ -43,6 +44,7 @@ impl Default for ParseConfig {
             plain_text: false,
             export: false,
             inductor_provenance: false,
+            out: PathBuf::from("tl_out"),
         }
     }
 }
@@ -254,6 +256,7 @@ fn handle_guard(
 }
 
 pub fn parse_path(path: &PathBuf, config: ParseConfig) -> anyhow::Result<ParseOutput> {
+    let out_path = config.out.clone();
     let strict = config.strict;
     if !path.is_file() {
         bail!("{} is not a file", path.display())
