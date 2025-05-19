@@ -88,15 +88,19 @@ fn main() -> anyhow::Result<()> {
     }
     fs::create_dir(&out_path)?;
 
+    let tritonparse_log_dir = PathBuf::from("/home/findhao/tlparse/tests/logs");
+    let tritonparse_parser: tlparse::parsers::TritonParseParser = tlparse::parsers::TritonParseParser::new(tritonparse_log_dir);
+    
     let config = ParseConfig {
         strict: cli.strict,
         strict_compile_id: cli.strict_compile_id,
-        custom_parsers: Vec::new(),
+        custom_parsers: vec![Box::new(tritonparse_parser)],
         custom_header_html: cli.custom_header_html,
         verbose: cli.verbose,
         plain_text: cli.plain_text,
         export: cli.export,
         inductor_provenance: cli.inductor_provenance,
+        out: out_path.clone(),
     };
 
     let output = parse_path(&path, config)?;
