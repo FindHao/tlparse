@@ -109,7 +109,6 @@ fn main() -> anyhow::Result<()> {
         plain_text: cli.plain_text,
         export: cli.export,
         inductor_provenance: cli.inductor_provenance,
-        out: out_path.clone(),
     };
 
     let output = parse_path(&path, config)?;
