@@ -1,0 +1,33 @@
+{
+  "tritonparse_url_prefix": "https://tritonparse.com/index.html?json_url=https://tritonparse.com/api/v1/tritonparse/triton_trace/",
+  
+  "rank_default": {
+    "regular_files": [
+      "default_f0_fc0_a0_cai-.ndjson",
+      "default_f1_fc0_a0_cai-.ndjson"
+    ],
+    "mapped_files": [
+      "default_mapped.ndjson"
+    ]
+  },
+  
+  "rank_0": {
+    "regular_files": [
+      "rank0_f0_fc0_a0_cai0.ndjson",
+      "rank0_f1_fc2_a0_cai3.ndjson"
+    ],
+    "mapped_files": [
+      "rank0_mapped.ndjson"
+    ]
+  },
+  
+  "rank_1": {
+    "regular_files": [
+      "rank1_f0_fc0_a0_cai0.ndjson",
+      "rank1_f1_fc2_a0_cai3.ndjson"
+    ],
+    "mapped_files": [
+      "rank1_mapped.ndjson"
+    ]
+  }
+} 

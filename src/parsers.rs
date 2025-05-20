@@ -1,8 +1,9 @@
 use crate::templates::TEMPLATE_QUERY_PARAM_SCRIPT;
 use crate::{types::*, ParseConfig};
 use html_escape::encode_text;
+use once_cell::sync::Lazy;
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::Path;
@@ -825,10 +826,17 @@ pub struct TritonParseParser {
     pub tritonparse_config_path: PathBuf,
     // URL prefix will be loaded from the config file
     pub tritonparse_url_prefix: String,
-    // List of regular files
+    // Maps ranks to their respective files
+    // rank_files[None] contains the default files for unspecified ranks
+    // rank_files[Some(rank)] contains the files for the specific rank
+    pub rank_files: HashMap<Option<u32>, RankFiles>,
+}
+
+// Files for a specific rank
+pub struct RankFiles {
     pub regular_files: Vec<String>,
-    // List of mapped files
-    pub mapped_files: Vec<String>,
+    // Each rank will have at most one mapped file
+    pub mapped_file: Option<String>,
 }
 
 impl TritonParseParser {
@@ -837,8 +845,7 @@ impl TritonParseParser {
         let mut parser = Self {
             tritonparse_config_path,
             tritonparse_url_prefix: String::new(),
-            regular_files: Vec::new(),
-            mapped_files: Vec::new(),
+            rank_files: HashMap::new(),
         };
         
         // Read and parse the config file
@@ -851,20 +858,67 @@ impl TritonParseParser {
                     println!("Warning: tritonparse_url_prefix not found in config file");
                 }
                 
-                // Extract regular files
-                if let Some(files) = config.get("regular_files").and_then(|v| v.as_array()) {
-                    parser.regular_files = files
-                        .iter()
-                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                        .collect();
+                // Process each key in the config
+                for (key, value) in config.as_object().unwrap_or(&serde_json::Map::new()) {
+                    // Skip the url_prefix key as it's already processed
+                    if key == "tritonparse_url_prefix" {
+                        continue;
+                    }
+                    
+                    // Parse the rank from the key
+                    let rank = if key == "rank_default" {
+                        None
+                    } else if key.starts_with("rank_") {
+                        match key[5..].parse::<u32>() {
+                            Ok(r) => Some(r),
+                            Err(_) => {
+                                println!("Warning: Invalid rank format: {}", key);
+                                continue;
+                            }
+                        }
+                    } else {
+                        // Skip keys that don't follow our rank format
+                        continue;
+                    };
+                    
+                    // Extract regular files
+                    let regular_files = if let Some(files) = value.get("regular_files").and_then(|v| v.as_array()) {
+                        files
+                            .iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect()
+                    } else {
+                        Vec::new()
+                    };
+                    
+                    // Extract mapped file (only one per rank)
+                    let mapped_file = if let Some(files) = value.get("mapped_files").and_then(|v| v.as_array()) {
+                        if let Some(first) = files.first().and_then(|v| v.as_str()) {
+                            if files.len() > 1 {
+                                println!("Warning: Multiple mapped files specified for rank {}, using only the first one", 
+                                         rank.map_or("default".to_string(), |r| r.to_string()));
+                            }
+                            Some(first.to_string())
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    
+                    // Add to rank_files
+                    parser.rank_files.insert(rank, RankFiles { 
+                        regular_files, 
+                        mapped_file
+                    });
                 }
                 
-                // Extract mapped files
-                if let Some(files) = config.get("mapped_files").and_then(|v| v.as_array()) {
-                    parser.mapped_files = files
-                        .iter()
-                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                        .collect();
+                // If there's no default rank entry, create an empty one
+                if !parser.rank_files.contains_key(&None) {
+                    parser.rank_files.insert(None, RankFiles {
+                        regular_files: Vec::new(),
+                        mapped_file: None,
+                    });
                 }
             } else {
                 println!("Error: Failed to parse tritonparse config JSON");
@@ -874,6 +928,31 @@ impl TritonParseParser {
         }
         
         parser
+    }
+    
+    fn get_files_for_rank(&self, rank: Option<u32>) -> &RankFiles {
+        // Try to get files for the specific rank
+        if let Some(files) = self.rank_files.get(&rank) {
+            return files;
+        }
+        
+        // Try to fall back to default rank
+        if let Some(files) = self.rank_files.get(&None) {
+            return files;
+        }
+        
+        // If both specific rank and default rank don't exist, return empty files from a static reference
+        // This avoids the lifetime issues with thread_local
+        
+        // Create a static empty RankFiles reference
+        static EMPTY_RANK_FILES: Lazy<RankFiles> = Lazy::new(|| {
+            RankFiles {
+                regular_files: Vec::new(),
+                mapped_file: None,
+            }
+        });
+        
+        &EMPTY_RANK_FILES
     }
 }
 
@@ -891,21 +970,24 @@ impl StructuredLogParser for TritonParseParser {
         &self,
         _lineno: usize,
         _metadata: Metadata<'e>,
-        _rank: Option<u32>,
+        rank: Option<u32>,
         compile_id: &Option<CompileId>,
         _payload: &str,
     ) -> anyhow::Result<ParserResults> {
         // Debug print for rank using pattern matching
-        if let Some(rank_value) = _rank {
+        if let Some(rank_value) = rank {
             println!("TritonParseParser processing for rank: {}", rank_value);
         } else {
-            println!("Note: TritonParseParser received a null rank");
+            println!("Note: TritonParseParser using default rank");
         }
         
         // Distinguish two cases:
         // 1. When processing log entries with CompileId, only look for corresponding regular tritonparse files
         // 2. When processing log entries without CompileId, only look for mapped files
         use std::sync::Mutex;
+        
+        // Get files for the current rank
+        let rank_files = self.get_files_for_rank(rank);
         
         // Track already processed compile_ids
         thread_local! {
@@ -939,8 +1021,8 @@ impl StructuredLogParser for TritonParseParser {
                 static MAPPED_FILE_PROCESSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
                 
                 if !MAPPED_FILE_PROCESSED.swap(true, std::sync::atomic::Ordering::SeqCst) {
-                    // Process mapped files from the config file
-                    for file_name in &self.mapped_files {
+                    // Process mapped file from the config file for this rank
+                    if let Some(file_name) = &rank_files.mapped_file {
                         // Generate complete URL
                         let url = format!("{}{}", self.tritonparse_url_prefix, file_name);
                         
@@ -963,8 +1045,8 @@ impl StructuredLogParser for TritonParseParser {
                     cid.compiled_autograd_id.map_or("-".to_string(), |v| v.to_string())
                 );
                 
-                // Look for matching files in the regular_files list
-                for file_name in &self.regular_files {
+                // Look for matching files in the regular_files list for this rank
+                for file_name in &rank_files.regular_files {
                     if file_name.contains(&filename_pattern) {
                         // Generate complete URL
                         let url = format!("{}{}", self.tritonparse_url_prefix, file_name);
