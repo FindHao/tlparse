@@ -1,7 +1,6 @@
 use crate::templates::TEMPLATE_QUERY_PARAM_SCRIPT;
 use crate::{types::*, ParseConfig};
 use html_escape::encode_text;
-use once_cell::sync::Lazy;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
@@ -833,6 +832,7 @@ pub struct TritonParseParser {
 }
 
 // Files for a specific rank
+#[derive(Clone)]
 pub struct RankFiles {
     pub regular_files: Vec<String>,
     // Each rank will have at most one mapped file
@@ -913,29 +913,22 @@ impl TritonParseParser {
         parser
     }
     
-    fn get_files_for_rank(&self, rank: Option<u32>) -> &RankFiles {
+    fn get_files_for_rank(&self, rank: Option<u32>) -> RankFiles {
         // Try to get files for the specific rank
         if let Some(files) = self.rank_files.get(&rank) {
-            return files;
+            return files.clone();
         }
         
         // Try to fall back to default rank
         if let Some(files) = self.rank_files.get(&None) {
-            return files;
+            return files.clone();
         }
         
-        // If both specific rank and default rank don't exist, return empty files from a static reference
-        // This avoids the lifetime issues with thread_local
-        
-        // Create a static empty RankFiles reference
-        static EMPTY_RANK_FILES: Lazy<RankFiles> = Lazy::new(|| {
-            RankFiles {
-                regular_files: Vec::new(),
-                mapped_file: None,
-            }
-        });
-        
-        &EMPTY_RANK_FILES
+        // If both specific rank and default rank don't exist, return a new empty RankFiles
+        RankFiles {
+            regular_files: Vec::new(),
+            mapped_file: None,
+        }
     }
 }
 
