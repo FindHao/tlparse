@@ -822,7 +822,7 @@ impl StructuredLogParser for PropagateRealTensorsParser<'_> {
 
 pub struct TritonParseParser {
     pub tritonparse_log_dir: PathBuf,
-    // 硬编码 URL 前缀
+    // Hardcoded URL prefix
     pub tritonparse_url_prefix: &'static str,
 }
 
@@ -830,7 +830,7 @@ impl TritonParseParser {
     pub fn new(tritonparse_log_dir: PathBuf) -> Self {
         Self {
             tritonparse_log_dir,
-            // 硬编码 URL 前缀
+            // Hardcoded URL prefix
             tritonparse_url_prefix: "https://tritonparse.com/index.html?json_url=https://tritonparse.com/api/v1/tritonparse/triton_trace/",
         }
     }
@@ -842,7 +842,7 @@ impl StructuredLogParser for TritonParseParser {
     }
 
     fn get_metadata<'e>(&self, _e: &'e Envelope) -> Option<Metadata<'e>> {
-        // 始终返回元数据，这样 parse 方法会被调用一次
+        // Always return metadata so the parse method will be called once
         Some(Metadata::Empty(&EmptyMetadata {}))
     }
 
@@ -854,12 +854,12 @@ impl StructuredLogParser for TritonParseParser {
         compile_id: &Option<CompileId>,
         _payload: &str,
     ) -> anyhow::Result<ParserResults> {
-        // 区分两种情况：
-        // 1. 处理具有 CompileId 的日志条目时，只查找对应的常规 tritonparse 文件 (f*_fc*_a*_cai*.ndjson)
-        // 2. 处理没有 CompileId 的日志条目时，只查找映射文件 (*_mapped.ndjson)
+        // Distinguish two cases:
+        // 1. When processing log entries with CompileId, only look for corresponding regular tritonparse files (f*_fc*_a*_cai*.ndjson)
+        // 2. When processing log entries without CompileId, only look for mapped files (*_mapped.ndjson)
         use std::sync::Mutex;
         
-        // 跟踪已处理的 compile_id
+        // Track already processed compile_ids
         thread_local! {
             static PROCESSED_ONCE: Mutex<HashSet<String>> = Mutex::new(HashSet::new());
         }
@@ -867,7 +867,7 @@ impl StructuredLogParser for TritonParseParser {
         let mut results = Vec::new();
         
         if let Some(cid) = compile_id {
-            // 检查这个编译 ID 是否已处理过
+            // Check if this compilation ID has already been processed
             let cid_str = cid.to_string();
             let mut should_process = true;
             
@@ -884,10 +884,10 @@ impl StructuredLogParser for TritonParseParser {
                 return Ok(Vec::new());
             }
             
-            // 检查 cid_str 是否包含 "[-/-]"
+            // Check if cid_str contains "[-/-]"
             if cid_str.contains("[-/-]") || (cid.frame_id.is_none() && cid.frame_compile_id.is_none()) {
-                // 无效的 CompileId 值 - 查找映射文件，放在 [-/-] 下
-                // 使用静态原子布尔值确保映射文件只处理一次
+                // Invalid CompileId value - look for mapped files, placed under [-/-]
+                // Use static atomic boolean to ensure the mapped file is processed only once
                 static MAPPED_FILE_PROCESSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
                 
                 if !MAPPED_FILE_PROCESSED.swap(true, std::sync::atomic::Ordering::SeqCst) {
@@ -899,16 +899,16 @@ impl StructuredLogParser for TritonParseParser {
                                     if let Some(name) = path.file_name() {
                                         let name_str = name.to_string_lossy();
                                         if name_str.ends_with("_mapped.ndjson") {
-                                            // 生成完整 URL
+                                            // Generate complete URL
                                             let url = format!("{}{}", self.tritonparse_url_prefix, name_str);
                                             
-                                            // 添加链接 - 这将出现在 [-/-] 目录下
+                                            // Add link - this will appear in the [-/-] directory
                                             results.push(ParserOutput::Link(
                                                 format!("TritonParse: {}", name_str),
                                                 url,
                                             ));
                                             
-                                            break; // 只处理找到的第一个映射文件
+                                            break; // Only process the first mapped file found
                                         }
                                     }
                                 }
@@ -917,9 +917,9 @@ impl StructuredLogParser for TritonParseParser {
                     }
                 }
             } else {
-                // 有效的 CompileId 值 - 寻找常规文件，放在 [frame_id/frame_compile_id] 下
+                // Valid CompileId value - look for regular files, placed under [frame_id/frame_compile_id]
                 
-                // 1. 构建常规 tritonparse 文件名
+                // 1. Build regular tritonparse filename
                 let filename = format!(
                     "f{}_fc{}_a{}_cai{}.ndjson",
                     cid.frame_id.unwrap_or(0),
@@ -928,13 +928,13 @@ impl StructuredLogParser for TritonParseParser {
                     cid.compiled_autograd_id.map_or("-".to_string(), |v| v.to_string())
                 );
                 
-                // 2. 检查文件是否存在
+                // 2. Check if the file exists
                 let source_path = self.tritonparse_log_dir.join(&filename);
                 if source_path.exists() {
-                    // 3. 生成完整 URL
+                    // 3. Generate complete URL
                     let url = format!("{}{}", self.tritonparse_url_prefix, filename);
                     
-                    // 4. 添加链接 - 这将出现在正常目录下
+                    // 4. Add link - this will appear in the normal directory
                     results.push(ParserOutput::Link(
                         format!("TritonParse: {}", filename),
                         url,
@@ -942,7 +942,7 @@ impl StructuredLogParser for TritonParseParser {
                 }
             }
         } else {
-            // CompileId 为空的情况应该打印调试信息
+            // Print debug info when CompileId is null
             println!("Warning: TritonParseParser received a null CompileId, this should not happen.");
         }
         
