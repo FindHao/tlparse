@@ -821,18 +821,59 @@ impl StructuredLogParser for PropagateRealTensorsParser<'_> {
 }
 
 pub struct TritonParseParser {
-    pub tritonparse_log_dir: PathBuf,
-    // Hardcoded URL prefix
-    pub tritonparse_url_prefix: &'static str,
+    // JSON config file containing tritonparse_url_prefix and file paths
+    pub tritonparse_config_path: PathBuf,
+    // URL prefix will be loaded from the config file
+    pub tritonparse_url_prefix: String,
+    // List of regular files
+    pub regular_files: Vec<String>,
+    // List of mapped files
+    pub mapped_files: Vec<String>,
 }
 
 impl TritonParseParser {
-    pub fn new(tritonparse_log_dir: PathBuf) -> Self {
-        Self {
-            tritonparse_log_dir,
-            // Hardcoded URL prefix
-            tritonparse_url_prefix: "https://tritonparse.com/index.html?json_url=https://tritonparse.com/api/v1/tritonparse/triton_trace/",
+    pub fn new(tritonparse_config_path: PathBuf) -> Self {
+        // Initialize with empty values that will be populated when we read the config file
+        let mut parser = Self {
+            tritonparse_config_path,
+            tritonparse_url_prefix: String::new(),
+            regular_files: Vec::new(),
+            mapped_files: Vec::new(),
+        };
+        
+        // Read and parse the config file
+        if let Ok(config_data) = std::fs::read_to_string(&parser.tritonparse_config_path) {
+            if let Ok(config) = serde_json::from_str::<serde_json::Value>(&config_data) {
+                // Extract tritonparse_url_prefix
+                if let Some(url_prefix) = config.get("tritonparse_url_prefix").and_then(|v| v.as_str()) {
+                    parser.tritonparse_url_prefix = url_prefix.to_string();
+                } else {
+                    println!("Warning: tritonparse_url_prefix not found in config file");
+                }
+                
+                // Extract regular files
+                if let Some(files) = config.get("regular_files").and_then(|v| v.as_array()) {
+                    parser.regular_files = files
+                        .iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect();
+                }
+                
+                // Extract mapped files
+                if let Some(files) = config.get("mapped_files").and_then(|v| v.as_array()) {
+                    parser.mapped_files = files
+                        .iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect();
+                }
+            } else {
+                println!("Error: Failed to parse tritonparse config JSON");
+            }
+        } else {
+            println!("Error: Failed to read tritonparse config file");
         }
+        
+        parser
     }
 }
 
@@ -854,9 +895,16 @@ impl StructuredLogParser for TritonParseParser {
         compile_id: &Option<CompileId>,
         _payload: &str,
     ) -> anyhow::Result<ParserResults> {
+        // Debug print for rank using pattern matching
+        if let Some(rank_value) = _rank {
+            println!("TritonParseParser processing for rank: {}", rank_value);
+        } else {
+            println!("Note: TritonParseParser received a null rank");
+        }
+        
         // Distinguish two cases:
-        // 1. When processing log entries with CompileId, only look for corresponding regular tritonparse files (f*_fc*_a*_cai*.ndjson)
-        // 2. When processing log entries without CompileId, only look for mapped files (*_mapped.ndjson)
+        // 1. When processing log entries with CompileId, only look for corresponding regular tritonparse files
+        // 2. When processing log entries without CompileId, only look for mapped files
         use std::sync::Mutex;
         
         // Track already processed compile_ids
@@ -891,54 +939,42 @@ impl StructuredLogParser for TritonParseParser {
                 static MAPPED_FILE_PROCESSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
                 
                 if !MAPPED_FILE_PROCESSED.swap(true, std::sync::atomic::Ordering::SeqCst) {
-                    if let Ok(entries) = fs::read_dir(&self.tritonparse_log_dir) {
-                        for entry in entries {
-                            if let Ok(entry) = entry {
-                                let path = entry.path();
-                                if path.is_file() {
-                                    if let Some(name) = path.file_name() {
-                                        let name_str = name.to_string_lossy();
-                                        if name_str.ends_with("_mapped.ndjson") {
-                                            // Generate complete URL
-                                            let url = format!("{}{}", self.tritonparse_url_prefix, name_str);
-                                            
-                                            // Add link - this will appear in the [-/-] directory
-                                            results.push(ParserOutput::Link(
-                                                format!("TritonParse: {}", name_str),
-                                                url,
-                                            ));
-                                            
-                                            break; // Only process the first mapped file found
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                    // Process mapped files from the config file
+                    for file_name in &self.mapped_files {
+                        // Generate complete URL
+                        let url = format!("{}{}", self.tritonparse_url_prefix, file_name);
+                        
+                        // Add link - this will appear in the [-/-] directory
+                        results.push(ParserOutput::Link(
+                            format!("TritonParse: {}", file_name),
+                            url,
+                        ));
                     }
                 }
             } else {
-                // Valid CompileId value - look for regular files, placed under [frame_id/frame_compile_id]
+                // Valid CompileId value - look for regular files
                 
-                // 1. Build regular tritonparse filename
-                let filename = format!(
-                    "f{}_fc{}_a{}_cai{}.ndjson",
+                // Build regular tritonparse filename pattern to match against
+                let filename_pattern = format!(
+                    "f{}_fc{}_a{}_cai{}",
                     cid.frame_id.unwrap_or(0),
                     cid.frame_compile_id.unwrap_or(0),
                     cid.attempt.unwrap_or(0),
                     cid.compiled_autograd_id.map_or("-".to_string(), |v| v.to_string())
                 );
                 
-                // 2. Check if the file exists
-                let source_path = self.tritonparse_log_dir.join(&filename);
-                if source_path.exists() {
-                    // 3. Generate complete URL
-                    let url = format!("{}{}", self.tritonparse_url_prefix, filename);
-                    
-                    // 4. Add link - this will appear in the normal directory
-                    results.push(ParserOutput::Link(
-                        format!("TritonParse: {}", filename),
-                        url,
-                    ));
+                // Look for matching files in the regular_files list
+                for file_name in &self.regular_files {
+                    if file_name.contains(&filename_pattern) {
+                        // Generate complete URL
+                        let url = format!("{}{}", self.tritonparse_url_prefix, file_name);
+                        
+                        // Add link - this will appear in the normal directory
+                        results.push(ParserOutput::Link(
+                            format!("TritonParse: {}", file_name),
+                            url,
+                        ));
+                    }
                 }
             }
         } else {

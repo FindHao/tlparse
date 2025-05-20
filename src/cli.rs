@@ -47,6 +47,9 @@ pub struct Cli {
     /// For inductor provenance tracking highlighter
     #[arg(short, long)]
     inductor_provenance: bool,
+    /// Path to TritonParse JSON config file with URL prefix and file paths
+    #[arg(long)]
+    tritonparse_config: Option<PathBuf>,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -88,13 +91,19 @@ fn main() -> anyhow::Result<()> {
     }
     fs::create_dir(&out_path)?;
 
-    let tritonparse_log_dir = PathBuf::from("/home/findhao/tlparse/tests/logs2/tmptchocnfz/");
-    let tritonparse_parser: tlparse::parsers::TritonParseParser = tlparse::parsers::TritonParseParser::new(tritonparse_log_dir);
+    // Initialize custom parsers
+    let mut custom_parsers: Vec<Box<dyn tlparse::parsers::StructuredLogParser>> = Vec::new();
+    
+    // Add TritonParseParser if config is provided
+    if let Some(tritonparse_config_path) = cli.tritonparse_config {
+        let tritonparse_parser = tlparse::parsers::TritonParseParser::new(tritonparse_config_path);
+        custom_parsers.push(Box::new(tritonparse_parser));
+    }
     
     let config = ParseConfig {
         strict: cli.strict,
         strict_compile_id: cli.strict_compile_id,
-        custom_parsers: vec![Box::new(tritonparse_parser)],
+        custom_parsers,
         custom_header_html: cli.custom_header_html,
         verbose: cli.verbose,
         plain_text: cli.plain_text,
