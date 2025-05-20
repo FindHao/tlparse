@@ -88,7 +88,7 @@ fn main() -> anyhow::Result<()> {
     }
     fs::create_dir(&out_path)?;
 
-    let tritonparse_log_dir = PathBuf::from("/home/findhao/tlparse/tests/logs");
+    let tritonparse_log_dir = PathBuf::from("/home/findhao/tlparse/tests/logs2/tmptchocnfz/");
     let tritonparse_parser: tlparse::parsers::TritonParseParser = tlparse::parsers::TritonParseParser::new(tritonparse_log_dir);
     
     let config = ParseConfig {

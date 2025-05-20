@@ -854,11 +854,12 @@ impl StructuredLogParser for TritonParseParser {
         compile_id: &Option<CompileId>,
         _payload: &str,
     ) -> anyhow::Result<ParserResults> {
-        // 确保每个编译 ID 只处理一次
+        // 区分两种情况：
+        // 1. 处理具有 CompileId 的日志条目时，只查找对应的常规 tritonparse 文件 (f*_fc*_a*_cai*.ndjson)
+        // 2. 处理没有 CompileId 的日志条目时，只查找映射文件 (*_mapped.ndjson)
         use std::sync::Mutex;
-        use std::sync::Once;
         
-        // 使用 Once 确保每个编译 ID 只处理一次
+        // 跟踪已处理的 compile_id
         thread_local! {
             static PROCESSED_ONCE: Mutex<HashSet<String>> = Mutex::new(HashSet::new());
         }
@@ -883,57 +884,66 @@ impl StructuredLogParser for TritonParseParser {
                 return Ok(Vec::new());
             }
             
-            // 1. 构建常规 tritonparse 文件名
-            let filename = format!(
-                "f{}_fc{}_a{}_cai{}.ndjson",
-                cid.frame_id.unwrap_or(0),
-                cid.frame_compile_id.unwrap_or(0),
-                cid.attempt.unwrap_or(0),
-                cid.compiled_autograd_id.map_or("-".to_string(), |v| v.to_string())
-            );
-            
-            // 2. 检查文件是否存在
-            let source_path = self.tritonparse_log_dir.join(&filename);
-            if source_path.exists() {
-                // 3. 生成完整 URL
-                let url = format!("{}{}", self.tritonparse_url_prefix, filename);
+            // 检查 cid_str 是否包含 "[-/-]"
+            if cid_str.contains("[-/-]") || (cid.frame_id.is_none() && cid.frame_compile_id.is_none()) {
+                // 无效的 CompileId 值 - 查找映射文件，放在 [-/-] 下
+                // 使用静态原子布尔值确保映射文件只处理一次
+                static MAPPED_FILE_PROCESSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
                 
-                // 4. 添加链接
-                results.push(ParserOutput::Link(
-                    format!("TritonParse: {}", filename),
-                    url,
-                ));
-            }
-        } else {
-            // 如果没有编译 ID，查找并处理专用的映射文件（只处理一次）
-            static MAPPED_FILE_PROCESSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-            
-            if !MAPPED_FILE_PROCESSED.swap(true, std::sync::atomic::Ordering::SeqCst) {
-                if let Ok(entries) = fs::read_dir(&self.tritonparse_log_dir) {
-                    for entry in entries {
-                        if let Ok(entry) = entry {
-                            let path = entry.path();
-                            if path.is_file() {
-                                if let Some(name) = path.file_name() {
-                                    let name_str = name.to_string_lossy();
-                                    if name_str.ends_with("_mapped.ndjson") {
-                                        // 生成完整 URL
-                                        let url = format!("{}{}", self.tritonparse_url_prefix, name_str);
-                                        
-                                        // 添加链接
-                                        results.push(ParserOutput::Link(
-                                            format!("TritonParse: {}", name_str),
-                                            url,
-                                        ));
-                                        
-                                        break; // 只处理找到的第一个映射文件
+                if !MAPPED_FILE_PROCESSED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                    if let Ok(entries) = fs::read_dir(&self.tritonparse_log_dir) {
+                        for entry in entries {
+                            if let Ok(entry) = entry {
+                                let path = entry.path();
+                                if path.is_file() {
+                                    if let Some(name) = path.file_name() {
+                                        let name_str = name.to_string_lossy();
+                                        if name_str.ends_with("_mapped.ndjson") {
+                                            // 生成完整 URL
+                                            let url = format!("{}{}", self.tritonparse_url_prefix, name_str);
+                                            
+                                            // 添加链接 - 这将出现在 [-/-] 目录下
+                                            results.push(ParserOutput::Link(
+                                                format!("TritonParse: {}", name_str),
+                                                url,
+                                            ));
+                                            
+                                            break; // 只处理找到的第一个映射文件
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                 }
+            } else {
+                // 有效的 CompileId 值 - 寻找常规文件，放在 [frame_id/frame_compile_id] 下
+                
+                // 1. 构建常规 tritonparse 文件名
+                let filename = format!(
+                    "f{}_fc{}_a{}_cai{}.ndjson",
+                    cid.frame_id.unwrap_or(0),
+                    cid.frame_compile_id.unwrap_or(0),
+                    cid.attempt.unwrap_or(0),
+                    cid.compiled_autograd_id.map_or("-".to_string(), |v| v.to_string())
+                );
+                
+                // 2. 检查文件是否存在
+                let source_path = self.tritonparse_log_dir.join(&filename);
+                if source_path.exists() {
+                    // 3. 生成完整 URL
+                    let url = format!("{}{}", self.tritonparse_url_prefix, filename);
+                    
+                    // 4. 添加链接 - 这将出现在正常目录下
+                    results.push(ParserOutput::Link(
+                        format!("TritonParse: {}", filename),
+                        url,
+                    ));
+                }
             }
+        } else {
+            // CompileId 为空的情况应该打印调试信息
+            println!("Warning: TritonParseParser received a null CompileId, this should not happen.");
         }
         
         Ok(results)
