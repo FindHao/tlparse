@@ -892,19 +892,9 @@ impl TritonParseParser {
                     };
                     
                     // Extract mapped file (only one per rank)
-                    let mapped_file = if let Some(files) = value.get("mapped_files").and_then(|v| v.as_array()) {
-                        if let Some(first) = files.first().and_then(|v| v.as_str()) {
-                            if files.len() > 1 {
-                                println!("Warning: Multiple mapped files specified for rank {}, using only the first one", 
-                                         rank.map_or("default".to_string(), |r| r.to_string()));
-                            }
-                            Some(first.to_string())
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    };
+                    let mapped_file = value.get("mapped_file")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
                     
                     // Add to rank_files
                     parser.rank_files.insert(rank, RankFiles { 
@@ -913,13 +903,6 @@ impl TritonParseParser {
                     });
                 }
                 
-                // If there's no default rank entry, create an empty one
-                if !parser.rank_files.contains_key(&None) {
-                    parser.rank_files.insert(None, RankFiles {
-                        regular_files: Vec::new(),
-                        mapped_file: None,
-                    });
-                }
             } else {
                 println!("Error: Failed to parse tritonparse config JSON");
             }
@@ -974,13 +957,6 @@ impl StructuredLogParser for TritonParseParser {
         compile_id: &Option<CompileId>,
         _payload: &str,
     ) -> anyhow::Result<ParserResults> {
-        // Debug print for rank using pattern matching
-        if let Some(rank_value) = rank {
-            println!("TritonParseParser processing for rank: {}", rank_value);
-        } else {
-            println!("Note: TritonParseParser using default rank");
-        }
-        
         // Distinguish two cases:
         // 1. When processing log entries with CompileId, only look for corresponding regular tritonparse files
         // 2. When processing log entries without CompileId, only look for mapped files
